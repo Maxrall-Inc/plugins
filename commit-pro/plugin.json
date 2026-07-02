@@ -1,0 +1,5 @@
+{
+  "name": "commit-pro",
+  "version": "1.0.0",
+  "description": "Conventional-commit workflow: smart staged-diff commits, changelog entries, and commit message fixes."
+}

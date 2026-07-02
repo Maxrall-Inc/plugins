@@ -1,0 +1,5 @@
+{
+  "name": "security-audit",
+  "version": "1.0.0",
+  "description": "Security review workflow: audit a diff or module for injection, authz, secrets, and dependency risks."
+}

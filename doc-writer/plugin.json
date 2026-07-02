@@ -1,0 +1,5 @@
+{
+  "name": "doc-writer",
+  "version": "1.0.0",
+  "description": "Documentation helpers: READMEs, JSDoc/docstrings, and architecture overviews generated from the actual code."
+}

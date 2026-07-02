@@ -1,0 +1,5 @@
+{
+  "name": "test-gen",
+  "version": "1.0.0",
+  "description": "Generate focused unit tests for a file or function, following the project's existing test conventions."
+}
