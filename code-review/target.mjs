@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// S16b — the code-review plugin's target-resolution + comment-body helper.
+// S16b/S25d — the code-review plugin's target-resolution + comment-body + budget helper.
 //
-// Two subcommands, both PURE READS (it never posts, never writes a file):
+// Three subcommands. resolve and comment-body are PURE READS; max-findings is the
+// ONE writer (it persists a per-repo findings budget under the plugin data dir).
+// The helper itself never posts — that stays the main agent's job (see the command).
 //
 //   target.mjs resolve [<target>]
 //     Works out what to review and prints ONE JSON object:
@@ -16,6 +18,12 @@
 //     body of ONE plain PR/MR comment, printed to stdout. Shape mistakes are
 //     refused (exit 2) instead of posting a malformed comment.
 //
+//   target.mjs max-findings set <n|all|default> | get
+//     The STANDING findings budget for this repo — Claude Code's rule: the
+//     choice is reused until `--max-findings default`. Stored in
+//     $NEXRALL_PLUGIN_DATA (or ~/.nexrall/plugin-data/code-review), keyed by
+//     the git toplevel so each project keeps its own.
+//
 // Exit codes (stable, documented — this is the CI-facing surface):
 //   0 ok · 1 usage · 2 not a git repository · 3 gh/glab missing · 4 target did
 //   not resolve (unknown ref/number/host) · 5 host tool failed
@@ -24,6 +32,7 @@
 // otherwise an existing path (prefix `./` when a file shares a branch's name).
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -433,11 +442,96 @@ export function commentBody(report) {
   return lines.join('\n') + '\n';
 }
 
+// ─── S25d: the persisted findings budget ─────────────────────────────────────
+//
+// CC's `/code-review --max-findings <n>` choice is reused until `--max-findings
+// default` — a per-repo preference, not a per-invocation one. The helper owns
+// the storage because it is the one part of the plugin that runs as a real
+// script; the state lives in the plugin's data dir (the SAME directory
+// $NEXRALL_PLUGIN_DATA names for hooks/MCP), keyed by the repo's git toplevel.
+//
+// Exit codes match the rest of this helper: 0 ok · 1 usage (bad value / unknown verb).
+
+const BUDGET_MIN = 1;
+const BUDGET_MAX = 999;
+/** Keep the state file bounded: the OLDEST repo keys fall out first. */
+const BUDGET_KEYS_CAP = 50;
+
+function budgetStateDir() {
+  const env = (process.env.NEXRALL_PLUGIN_DATA ?? '').trim();
+  return env || path.join(os.homedir(), '.nexrall', 'plugin-data', 'code-review');
+}
+
+function budgetFile() {
+  return path.join(budgetStateDir(), 'max-findings.json');
+}
+
+/** A repo's identity: the git toplevel when there is one, else the cwd. */
+function budgetRepoKey() {
+  const r = tryRun('git', ['rev-parse', '--show-toplevel']);
+  return r.ok && r.out.trim() ? r.out.trim() : process.cwd();
+}
+
+function readBudgetMap() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(budgetFile(), 'utf-8'));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {}; // no state yet (or unreadable): a fresh start, never a crash
+  }
+}
+
+function writeBudgetMap(map) {
+  fs.mkdirSync(budgetStateDir(), { recursive: true });
+  const keys = Object.keys(map);
+  const kept = {};
+  for (const k of keys.slice(-BUDGET_KEYS_CAP)) kept[k] = map[k];
+  fs.writeFileSync(budgetFile(), JSON.stringify(kept, null, 2) + '\n');
+}
+
+export function maxFindingsCommand(args) {
+  const [verb, value] = args;
+  if (verb === 'get') {
+    const v = readBudgetMap()[budgetRepoKey()];
+    if (typeof v === 'string' && v) process.stdout.write(v + '\n');
+    return EXIT.ok;
+  }
+  if (verb === 'set') {
+    if (value === undefined || value === '') {
+      process.stderr.write('target.mjs: max-findings set needs <n|all|default>\n' + USAGE);
+      return EXIT.usage;
+    }
+    const map = readBudgetMap();
+    const key = budgetRepoKey();
+    if (value === 'default') {
+      delete map[key];
+      writeBudgetMap(map);
+      process.stdout.write('default\n');
+      return EXIT.ok;
+    }
+    const n = /^\d+$/.test(value) ? Number(value) : NaN;
+    if (value !== 'all' && !(Number.isInteger(n) && n >= BUDGET_MIN && n <= BUDGET_MAX)) {
+      process.stderr.write(
+        `target.mjs: "${value}" is not a findings budget (${BUDGET_MIN}-${BUDGET_MAX}, or all, or default)\n` + USAGE,
+      );
+      return EXIT.usage;
+    }
+    map[key] = value === 'all' ? 'all' : String(n);
+    writeBudgetMap(map);
+    process.stdout.write(map[key] + '\n');
+    return EXIT.ok;
+  }
+  process.stderr.write(USAGE);
+  return EXIT.usage;
+}
+
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 const USAGE = `usage:
   target.mjs resolve [<target>]        # one JSON review plan (kind/diffCommand/files/untracked)
   target.mjs comment-body <file|->     # the exact body of ONE PR/MR comment
+  target.mjs max-findings get          # the standing findings budget for this repo ('' when unset)
+  target.mjs max-findings set <n|all|default>   # persist / clear it
 exit: 0 ok · 1 usage · 2 not a git repository · 3 gh/glab missing · 4 target did not resolve · 5 host tool failed
 `;
 
@@ -477,6 +571,7 @@ function main(argv) {
     process.stdout.write(commentBody(v.report));
     return EXIT.ok;
   }
+  if (sub === 'max-findings') return maxFindingsCommand(rest);
   process.stderr.write(USAGE);
   return EXIT.usage;
 }

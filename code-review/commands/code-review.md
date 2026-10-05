@@ -12,7 +12,13 @@ Parse the arguments first:
   (prefix `./` when a file shares a branch's name). No target = the uncommitted working
   tree (the default);
 - `deep` → raise the findings budget to 25 and include suggestions;
-- `--max-findings <n>|all` → exact budget (wins over `deep`);
+- `--max-findings <n>|all` → exact budget (wins over `deep`); ALSO persists as this repo's
+  standing choice — after parsing, run `node <helper> max-findings set <n|all>` for this repo;
+- `--max-findings default` → clear the standing choice (`node <helper> max-findings set default`)
+  and use the normal default for this run;
+- no flag → when a standing choice exists it IS the budget: read it with
+  `node <helper> max-findings get` (prints a number or `all`; empty output = none set).
+  Precedence: explicit flag > standing choice > `deep` (25) > default (10);
 - `--comment` → at the very end, post the merged findings as ONE comment on the PR/MR.
   Valid ONLY with a number target — otherwise refuse and say why;
 - `--json` → the final answer is exactly one JSON object (shape below), nothing else.

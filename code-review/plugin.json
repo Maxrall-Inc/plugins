@@ -1,5 +1,5 @@
 {
   "name": "code-review",
-  "version": "1.1.0",
-  "description": "Review the working diff with a fresh-context, read-only reviewer sub-agent: structured findings (file:line, severity, why, fix), findings budget, clean diffs stay clean. Adds /code-review and a reviewer agent."
+  "version": "1.2.0",
+  "description": "Review the working diff with a fresh-context, read-only reviewer sub-agent: structured findings (file:line, severity, why, fix), findings budget (with a per-repo standing choice), clean diffs stay clean. Adds /code-review and a reviewer agent."
 }
